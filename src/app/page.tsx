@@ -15,10 +15,14 @@ const SOURCES: { id: SourceId; name: string; color: string }[] = [
 type SortMode = 'score' | 'name' | 'source' | 'experience'
 type SearchStatus = 'idle' | 'running' | 'done' | 'error'
 
+function now() {
+  return new Date().toLocaleTimeString('en', { hour12: false })
+}
+
 export default function TransmitSearch() {
-  const [query, setQuery] = useState('Senior ML Engineer')
-const [location, setLocation] = useState('United States')  
-  const [topN, setTopN] = useState(100)
+  const [query, setQuery] = useState('CIAM Engineer')
+  const [location, setLocation] = useState('United States')
+  const [topN, setTopN] = useState(25)
   const [candidates, setCandidates] = useState<ScoredCandidate[]>([])
   const [progress, setProgress] = useState<Record<string, SearchProgress>>({})
   const [logs, setLogs] = useState<{ t: string; msg: string; type: string }[]>([
@@ -30,10 +34,6 @@ const [location, setLocation] = useState('United States')
   const [duration, setDuration] = useState(0)
   const [selected, setSelected] = useState<ScoredCandidate | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-
-  function now() {
-    return new Date().toLocaleTimeString('en', { hour12: false })
-  }
 
   const addLog = useCallback((msg: string, type = 'info') => {
     setLogs(prev => [...prev.slice(-20), { t: now(), msg, type }])
@@ -56,7 +56,7 @@ const [location, setLocation] = useState('United States')
 
     abortRef.current = new AbortController()
     const sources = SOURCES.map(s => s.id).join(',')
-    const url = `/api/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&topN=${topN}&sources=${sources}`
+    const url = `/api/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&topN=${String(topN)}&sources=${sources}`
 
     try {
       const res = await fetch(url, { signal: abortRef.current.signal })
@@ -79,31 +79,35 @@ const [location, setLocation] = useState('United States')
           if (line.startsWith('event: ')) {
             event = line.slice(7).trim()
           } else if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6))
+            try {
+              const data = JSON.parse(line.slice(6))
 
-            if (event === 'progress') {
-              const p = data as SearchProgress
-              setProgress(prev => ({ ...prev, [p.sourceId]: p }))
-              if (p.status === 'done') {
-                addLog(`${p.sourceId}: Found ${p.found} candidates`, 'ok')
-              } else if (p.status === 'error') {
-                addLog(`${p.sourceId}: ${p.message}`, 'warn')
-              } else {
-                addLog(p.message, 'info')
+              if (event === 'progress') {
+                const p = data as SearchProgress
+                setProgress(prev => ({ ...prev, [p.sourceId]: p }))
+                if (p.status === 'done') {
+                  addLog(`${p.sourceId}: Found ${p.found} candidates`, 'ok')
+                } else if (p.status === 'error') {
+                  addLog(`${p.sourceId}: ${p.message}`, 'warn')
+                } else {
+                  addLog(p.message, 'info')
+                }
               }
-            }
 
-            if (event === 'result') {
-              setCandidates(data.candidates)
-              setTotalScanned(data.totalScanned)
-              setDuration(Math.round(data.durationMs / 1000))
-              setStatus('done')
-              addLog(`Complete. ${data.candidates.length} candidates ranked in ${Math.round(data.durationMs / 1000)}s.`, 'ok')
-            }
+              if (event === 'result') {
+                setCandidates(data.candidates)
+                setTotalScanned(data.totalScanned)
+                setDuration(Math.round(data.durationMs / 1000))
+                setStatus('done')
+                addLog(`Complete. ${data.candidates.length} candidates ranked in ${Math.round(data.durationMs / 1000)}s.`, 'ok')
+              }
 
-            if (event === 'error') {
-              addLog(`Search error: ${data.message}`, 'warn')
-              setStatus('error')
+              if (event === 'error') {
+                addLog(`Search error: ${data.message}`, 'warn')
+                setStatus('error')
+              }
+            } catch {
+              // skip malformed JSON
             }
           }
         }
@@ -129,7 +133,6 @@ const [location, setLocation] = useState('United States')
 
   return (
     <div style={styles.app}>
-      {/* Header */}
       <div style={styles.header}>
         <div style={styles.logo}>
           <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
@@ -148,7 +151,6 @@ const [location, setLocation] = useState('United States')
           <div style={{
             ...styles.statusDot,
             background: status === 'running' ? '#e63946' : status === 'done' ? '#06d6a0' : '#4cc9f0',
-            animation: status === 'running' ? 'pulse 0.6s infinite' : 'pulse 2s infinite',
           }}/>
           <span style={styles.statusText}>
             {status === 'idle' ? 'READY' : status === 'running' ? 'SCANNING' : status === 'done' ? 'COMPLETE' : 'ERROR'}
@@ -156,16 +158,15 @@ const [location, setLocation] = useState('United States')
         </div>
       </div>
 
-      {/* Search Panel */}
       <div style={styles.searchPanel}>
         <div style={styles.searchFields}>
           <div>
             <label style={styles.label}>Role / Keywords</label>
-            <input style={styles.input} value={query} onChange={e => setQuery(e.target.value)} placeholder="e.g. Senior ML Engineer"/>
+            <input style={styles.input} value={query} onChange={e => setQuery(e.target.value)} placeholder="e.g. CIAM Engineer"/>
           </div>
           <div>
             <label style={styles.label}>Location</label>
-            <input style={styles.input} value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Global, US, Remote"/>
+            <input style={styles.input} value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. United States, Global"/>
           </div>
           <div>
             <label style={styles.label}>Top Candidates</label>
@@ -176,24 +177,22 @@ const [location, setLocation] = useState('United States')
             </select>
           </div>
         </div>
-        <button style={{
-          ...styles.launchBtn,
-          background: status === 'running' ? '#c1121f' : '#e63946',
-        }} onClick={startSearch}>
+        <button
+          style={{ ...styles.launchBtn, background: status === 'running' ? '#c1121f' : '#e63946' }}
+          onClick={startSearch}
+        >
           {status === 'running' ? 'Stop' : status === 'done' ? 'Re-Scan' : 'Launch Search'}
         </button>
       </div>
 
-      {/* Main Grid */}
       <div style={styles.mainGrid}>
-        {/* Sources Panel */}
         <div style={styles.panel}>
           <div style={styles.panelTitle}>Sources</div>
           {SOURCES.map(src => {
             const p = progress[src.id]
-            const isRunning = p?.status === 'running'
             const isDone = p?.status === 'done'
             const isError = p?.status === 'error'
+            const isRunning = p?.status === 'running'
             return (
               <div key={src.id} style={{
                 ...styles.sourceItem,
@@ -210,7 +209,7 @@ const [location, setLocation] = useState('United States')
                   color: isError ? '#ef4444' : src.color,
                   background: `${src.color}15`,
                 }}>
-                  {isError ? 'ERR' : isRunning ? '...' : (p?.found || 0)}
+                  {isError ? 'ERR' : isRunning ? '...' : (p?.found ?? 0)}
                 </span>
               </div>
             )
@@ -228,7 +227,6 @@ const [location, setLocation] = useState('United States')
           </div>
         </div>
 
-        {/* Results Panel */}
         <div style={styles.panel}>
           <div style={styles.resultsHeader}>
             <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#6b7899' }}>
@@ -255,21 +253,29 @@ const [location, setLocation] = useState('United States')
               </div>
             ) : (
               sorted.map((c, i) => (
-                <div key={`${c.sourceId}-${c.externalId}`} style={{
-                  ...styles.candRow,
-                  borderColor: selected?.externalId === c.externalId ? '#e63946' : '#2a3560',
-                }} onClick={() => setSelected(selected?.externalId === c.externalId ? null : c)}>
+                <div
+                  key={`${c.sourceId}-${c.externalId}`}
+                  style={{
+                    ...styles.candRow,
+                    borderColor: selected?.externalId === c.externalId ? '#e63946' : '#2a3560',
+                  }}
+                  onClick={() => setSelected(selected?.externalId === c.externalId ? null : c)}
+                >
                   <div style={{ fontSize: 11, fontFamily: 'monospace', color: i < 3 ? '#ffd166' : '#6b7899', textAlign: 'center' }}>
                     #{i + 1}
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: '#6b7899', fontFamily: 'monospace' }}>
-                      {c.headline?.slice(0, 50) || c.skills.slice(0, 3).join(' · ')}
+                    <div style={{ fontSize: 11, color: '#6b7899', fontFamily: 'monospace', marginTop: 1 }}>
+                      {c.headline?.slice(0, 60) || c.skills.slice(0, 3).join(' · ')}
                       {c.yearsOfExperience ? ` · ${c.yearsOfExperience}y` : ''}
                     </div>
                   </div>
-                  <div style={{ fontSize: 9, fontFamily: 'monospace', padding: '2px 6px', borderRadius: 3, border: `1px solid ${SOURCES.find(s => s.id === c.sourceId)?.color}40`, color: SOURCES.find(s => s.id === c.sourceId)?.color }}>
+                  <div style={{
+                    fontSize: 9, fontFamily: 'monospace', padding: '2px 6px', borderRadius: 3,
+                    border: `1px solid ${SOURCES.find(s => s.id === c.sourceId)?.color}40`,
+                    color: SOURCES.find(s => s.id === c.sourceId)?.color,
+                  }}>
                     {c.sourceId.toUpperCase()}
                   </div>
                   <div style={{ width: 70 }}>
@@ -292,7 +298,6 @@ const [location, setLocation] = useState('United States')
             )}
           </div>
 
-          {/* Expanded candidate detail */}
           {selected && (
             <div style={styles.candidateDetail}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
@@ -320,7 +325,6 @@ const [location, setLocation] = useState('United States')
             </div>
           )}
 
-          {/* Log */}
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #2a3560' }}>
             <div style={styles.panelTitle}>Activity Log</div>
             <div style={styles.logPanel}>
@@ -358,7 +362,7 @@ const styles: Record<string, React.CSSProperties> = {
   logoSub: { fontSize: 13, fontWeight: 500, color: '#6b7899', letterSpacing: '0.01em' },
   logoTag: { fontSize: 10, fontFamily: 'monospace', color: '#6b7899', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 },
   statusBar: { display: 'flex', gap: 8, alignItems: 'center' },
-  statusDot: { width: 8, height: 8, borderRadius: '50%' },
+  statusDot: { width: 8, height: 8, borderRadius: '50%', animation: 'pulse 2s infinite' },
   statusText: { fontSize: 11, fontFamily: 'monospace', letterSpacing: '0.08em', color: '#06d6a0' },
   searchPanel: { background: '#151d38', border: '1px solid #2a3560', borderRadius: 12, padding: '1.25rem', display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', alignItems: 'end' },
   searchFields: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 },
