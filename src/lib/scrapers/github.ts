@@ -33,41 +33,39 @@ interface GHRepo {
   pushed_at: string
 }
 
-function buildQuery(role: string, location: string): string {
-  const techTerms: Record<string, string[]> = {
-    'machine learning': ['machine-learning', 'pytorch', 'tensorflow'],
-    'ml engineer': ['machine-learning', 'deep-learning'],
-    'backend': ['api', 'microservices', 'golang'],
-    'frontend': ['react', 'typescript', 'javascript'],
-    'devops': ['kubernetes', 'terraform', 'docker'],
-    'security': ['security', 'cryptography', 'infosec'],
-    'identity': ['oauth', 'openid', 'authentication'],
-    'ciam': ['oauth', 'openid', 'authentication'],
-    'iam': ['oauth', 'openid', 'iam'],
-    'auth': ['oauth', 'openid', 'authentication'],
-    'data': ['data-science', 'pandas', 'spark'],
+function buildQuery(role: string): string {
+  const techTerms: Record<string, string> = {
+    'machine learning': 'machine-learning',
+    'ml engineer': 'machine-learning',
+    'backend': 'api',
+    'frontend': 'react',
+    'devops': 'kubernetes',
+    'security': 'security',
+    'identity': 'oauth',
+    'ciam': 'oauth',
+    'iam': 'iam',
+    'auth': 'oauth',
+    'data': 'data-science',
+    'python': 'python',
+    'golang': 'golang',
+    'rust': 'rust',
   }
 
   const roleLower = role.toLowerCase()
-  let topics: string[] = []
-  for (const [key, vals] of Object.entries(techTerms)) {
+  let topic = ''
+  for (const [key, val] of Object.entries(techTerms)) {
     if (roleLower.includes(key)) {
-      topics = vals
+      topic = val
       break
     }
   }
 
-  const locationQuery = location &&
-    !location.toLowerCase().includes('global') &&
-    !location.toLowerCase().includes('remote')
-    ? `location:"${location}"`
-    : ''
-
-  if (topics.length > 0) {
-    return `topic:${topics[0]} followers:>10 ${locationQuery}`.trim()
+  if (topic) {
+    return `topic:${topic} followers:>50`
   }
 
-  return `language:python language:typescript followers:>50 ${locationQuery}`.trim()
+  // Fallback — search by most common languages
+  return `language:python followers:>100`
 }
 
 async function getUserStats(login: string): Promise<{
@@ -122,18 +120,22 @@ export async function scrapeGitHub(
     throw new Error('GITHUB_TOKEN not set')
   }
 
-  const query = buildQuery(role, location)
+  const query = buildQuery(role)
   const candidates: RawCandidate[] = []
   const seen = new Set<string>()
 
+  const isGlobal = /global|remote|worldwide/i.test(location)
+  const locationLower = location.toLowerCase()
+
   const searchRes = await axios.get(
-    `${BASE}/search/users?q=${encodeURIComponent(query)}&per_page=30&page=1&sort=followers`,
+    `${BASE}/search/users?q=${encodeURIComponent(query)}&per_page=50&page=1&sort=followers`,
     { headers: headers() }
   )
 
   const items: Array<{ login: string }> = searchRes.data.items || []
 
-  for (const item of items.slice(0, limit)) {
+  for (const item of items) {
+    if (candidates.length >= limit) break
     if (seen.has(item.login)) continue
     seen.add(item.login)
 
@@ -145,6 +147,16 @@ export async function scrapeGitHub(
 
       const user = profileRes.data
       if (user.type === 'Organization') continue
+
+      // Filter by location if not global
+      if (!isGlobal && user.location) {
+        const userLoc = user.location.toLowerCase()
+        const locationWords = locationLower.split(/[\s,]+/)
+        const matchesLocation = locationWords.some(word =>
+          word.length > 2 && userLoc.includes(word)
+        )
+        if (!matchesLocation) continue
+      }
 
       stats.followers = user.followers
       stats.hireable = user.hireable
@@ -176,6 +188,6 @@ function estimateYearsFromCreatedAt(createdAt: string): number {
   return Math.max(0, now - created)
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+function sleep(_ms: number) {
+  return new Promise(resolve => setTimeout(resolve, _ms))
 }
