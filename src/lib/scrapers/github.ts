@@ -34,38 +34,40 @@ interface GHRepo {
 }
 
 function buildQuery(role: string): string {
-  const techTerms: Record<string, string> = {
-    'machine learning': 'machine-learning',
-    'ml engineer': 'machine-learning',
-    'backend': 'api',
-    'frontend': 'react',
-    'devops': 'kubernetes',
-    'security': 'security',
-    'identity': 'oauth',
-    'ciam': 'oauth',
-    'iam': 'iam',
-    'auth': 'oauth',
-    'data': 'data-science',
-    'python': 'python',
-    'golang': 'golang',
-    'rust': 'rust',
+  const techTerms: Record<string, string[]> = {
+    'machine learning': ['machine-learning', 'pytorch', 'tensorflow'],
+    'ml': ['machine-learning', 'deep-learning', 'pytorch'],
+    'backend': ['backend', 'api', 'microservices'],
+    'frontend': ['frontend', 'react', 'typescript'],
+    'devops': ['devops', 'kubernetes', 'terraform'],
+    'security': ['security', 'cryptography', 'infosec'],
+    'identity': ['oauth', 'openid', 'authentication'],
+    'ciam': ['oauth', 'openid', 'authentication'],
+    'iam': ['oauth', 'openid', 'iam'],
+    'auth': ['oauth', 'openid', 'authentication'],
+    'data': ['data-science', 'data', 'analytics'],
+    'python': ['python', 'django', 'fastapi'],
+    'golang': ['golang', 'go'],
+    'rust': ['rust', 'systems'],
+    'mobile': ['ios', 'android', 'mobile'],
+    'cloud': ['aws', 'cloud', 'kubernetes'],
   }
 
   const roleLower = role.toLowerCase()
-  let topic = ''
-  for (const [key, val] of Object.entries(techTerms)) {
+  let keywords: string[] = []
+  for (const [key, vals] of Object.entries(techTerms)) {
     if (roleLower.includes(key)) {
-      topic = val
+      keywords = vals.slice(0, 2)
       break
     }
   }
 
-  if (topic) {
-    return `topic:${topic} followers:>50`
+  // Fall back to first two words of role
+  if (keywords.length === 0) {
+    keywords = roleLower.split(' ').filter(w => w.length > 3).slice(0, 2)
   }
 
-  // Fallback — search by most common languages
-  return `language:python followers:>100`
+  return `${keywords.join('+in:bio+')}+in:bio+followers:>20`
 }
 
 async function getUserStats(login: string): Promise<{
@@ -123,7 +125,6 @@ export async function scrapeGitHub(
   const query = buildQuery(role)
   const candidates: RawCandidate[] = []
   const seen = new Set<string>()
-
   const isGlobal = /global|remote|worldwide/i.test(location)
   const locationLower = location.toLowerCase()
 
