@@ -39,9 +39,9 @@ export async function scrapeLinkedIn(
     const experience = (p.experience as Array<{start_date?: string}>) || []
     const skills = (p.skills as string[]) || []
 
-    const linkedinUrl = p.linkedin_url
-  ? `https://${p.linkedin_url.replace(/^https?:\/\//, '')}`
-      : `https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(p.full_name as string)}`
+  const linkedinUrl = p.linkedin_url
+  ? `https://${String(p.linkedin_url).replace(/^https?:\/\//, '')}`
+  : `https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(p.full_name as string)}`
 
     return {
       sourceId: 'linkedin' as const,
