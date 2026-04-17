@@ -123,17 +123,23 @@ export async function scrapeGitHub(
   }
 
   const query = buildQuery(role, location)
-  const perPage = Math.min(limit, 30)
-  const pages = Math.ceil(limit / perPage)
+  console.log('GitHub query:', query)
+  console.log('GitHub search URL:', `${BASE}/search/users?q=${encodeURIComponent(query)}&per_page=10&page=1&sort=followers`)
 
   const candidates: RawCandidate[] = []
   const seen = new Set<string>()
+
+  const perPage = Math.min(limit, 30)
+  const pages = Math.ceil(limit / perPage)
 
   for (let page = 1; page <= pages && candidates.length < limit; page++) {
     const searchRes = await axios.get(
       `${BASE}/search/users?q=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}&sort=followers`,
       { headers: headers() }
     )
+
+    console.log('GitHub total_count:', searchRes.data.total_count)
+    console.log('GitHub items count:', searchRes.data.items?.length)
 
     const items: Array<{ login: string; avatar_url: string; html_url: string }> =
       searchRes.data.items || []
