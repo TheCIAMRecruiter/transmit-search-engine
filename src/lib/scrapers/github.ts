@@ -175,7 +175,7 @@ export async function scrapeGitHub(
     )
 
     // Respect GitHub secondary rate limits
-    await sleep(1000)
+    await sleep(300)
   }
 
   return candidates.slice(0, limit)
