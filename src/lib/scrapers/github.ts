@@ -154,7 +154,7 @@ export async function scrapeGitHub(
           const user = profileRes.data
           stats.followers = user.followers
           stats.hireable = user.hireable
-
+if (user.type === 'Organization') continue
           candidates.push({
             sourceId: 'github',
             externalId: String(user.id),
