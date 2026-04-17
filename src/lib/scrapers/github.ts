@@ -35,22 +35,22 @@ interface GHRepo {
 
 function buildQuery(role: string): string {
   const techTerms: Record<string, string[]> = {
-    'machine learning': ['machine-learning', 'pytorch', 'tensorflow'],
-    'ml': ['machine-learning', 'deep-learning', 'pytorch'],
-    'backend': ['backend', 'api', 'microservices'],
-    'frontend': ['frontend', 'react', 'typescript'],
-    'devops': ['devops', 'kubernetes', 'terraform'],
-    'security': ['security', 'cryptography', 'infosec'],
-    'identity': ['oauth', 'openid', 'authentication'],
-    'ciam': ['oauth', 'openid', 'authentication'],
-    'iam': ['oauth', 'openid', 'iam'],
-    'auth': ['oauth', 'openid', 'authentication'],
-    'data': ['data-science', 'data', 'analytics'],
-    'python': ['python', 'django', 'fastapi'],
+    'machine learning': ['machine-learning', 'pytorch'],
+    'ml': ['machine-learning', 'pytorch'],
+    'backend': ['backend', 'api'],
+    'frontend': ['frontend', 'react'],
+    'devops': ['devops', 'kubernetes'],
+    'security': ['security', 'infosec'],
+    'identity': ['oauth', 'openid'],
+    'ciam': ['oauth', 'openid'],
+    'iam': ['oauth', 'iam'],
+    'auth': ['oauth', 'openid'],
+    'data': ['data-science', 'analytics'],
+    'python': ['python', 'django'],
     'golang': ['golang', 'go'],
     'rust': ['rust', 'systems'],
-    'mobile': ['ios', 'android', 'mobile'],
-    'cloud': ['aws', 'cloud', 'kubernetes'],
+    'mobile': ['ios', 'android'],
+    'cloud': ['aws', 'cloud'],
   }
 
   const roleLower = role.toLowerCase()
@@ -62,12 +62,12 @@ function buildQuery(role: string): string {
     }
   }
 
-  // Fall back to first two words of role
+  // Fall back to first two meaningful words of role
   if (keywords.length === 0) {
     keywords = roleLower.split(' ').filter(w => w.length > 3).slice(0, 2)
   }
 
-  return `${keywords.join('+in:bio+')}+in:bio+followers:>20`
+  return `${keywords.join(' ')} in:bio followers:>20`
 }
 
 async function getUserStats(login: string): Promise<{
