@@ -3,7 +3,7 @@ import type { RawCandidate } from '../types'
 
 const BASE = 'https://api.peopledatalabs.com/v5'
 
-export async function scrapeLinkedIn(
+export async function scrapeIndeed(
   role: string,
   location: string,
   limit: number
