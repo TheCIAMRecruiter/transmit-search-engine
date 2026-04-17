@@ -107,12 +107,13 @@ const url = `/api/search?query=${encodeURIComponent(query)}&location=${encodeURI
           }
         }
       }
-    } catch (err) {
+} catch (err) {
       if ((err as Error).name !== 'AbortError') {
         addLog(`Fatal error: ${(err as Error).message}`, 'warn')
         setStatus('error')
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, location, topN, status, addLog])
 
   const sorted = [...candidates].sort((a, b) => {
