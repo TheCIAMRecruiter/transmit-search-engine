@@ -62,7 +62,6 @@ function buildQuery(role: string): string {
     }
   }
 
-  // Fall back to first two meaningful words of role
   if (keywords.length === 0) {
     keywords = roleLower.split(' ').filter(w => w.length > 3).slice(0, 2)
   }
@@ -149,14 +148,23 @@ export async function scrapeGitHub(
       const user = profileRes.data
       if (user.type === 'Organization') continue
 
-      // Filter by location if not global
+      // Smart US location filter
       if (!isGlobal && user.location) {
         const userLoc = user.location.toLowerCase()
-        const locationWords = locationLower.split(/[\s,]+/)
-        const matchesLocation = locationWords.some(word =>
-          word.length > 2 && userLoc.includes(word)
-        )
-        if (!matchesLocation) continue
+        const usTerms = [
+          'united states', 'usa', 'u.s.a', 'u.s.',
+          ', ca', ', ny', ', tx', ', wa', ', ma',
+          ', il', ', co', ', fl', ', ga', ', or',
+          ', dc', ', nc', ', va', ', az', ', mn',
+          'san francisco', 'new york', 'seattle',
+          'boston', 'chicago', 'austin', 'denver',
+          'los angeles', 'portland', 'atlanta',
+          'miami', 'washington', 'brooklyn', 'sf bay',
+        ]
+        const isUS = usTerms.some(term => userLoc.includes(term))
+        const locationWords = locationLower.split(/[\s,]+/).filter(w => w.length > 3)
+        const matchesCustom = locationWords.some(word => userLoc.includes(word))
+        if (!isUS && !matchesCustom) continue
       }
 
       stats.followers = user.followers
