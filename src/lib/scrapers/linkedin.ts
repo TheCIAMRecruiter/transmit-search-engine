@@ -1,46 +1,13 @@
-// src/lib/scrapers/linkedin.ts
-// Uses Proxycurl API — legal LinkedIn data for recruiting
-// Docs: https://nubela.co/proxycurl/docs
-// Cost: ~$0.01 per profile, $0.003 per search result
-
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
 const BASE = 'https://nubela.co/api/v1'
 
-interface ProxycurlSearchResult {
-  linkedin_profile_url: string
-  profile?: ProxycurlProfile
-}
+const headers = () => ({
+  Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
+})
 
-interface ProxycurlProfile {
-  public_identifier: string
-  full_name: string
-  headline: string
-  summary: string
-  city: string
-  state: string
-  country: string
-  profile_pic_url: string
-  experiences: Experience[]
-  skills: string[]
-  education: Education[]
-}
-
-interface Experience {
-  title: string
-  company: string
-  starts_at: { year: number } | null
-  ends_at: { year: number } | null
-}
-
-interface Education {
-  school: string
-  degree_name: string
-  field_of_study: string
-}
-
-function calcYearsOfExperience(experiences: Experience[]): number {
+function calcYearsOfExperience(experiences: Array<{starts_at?: {year: number} | null}>): number {
   const now = new Date().getFullYear()
   let earliest = now
   for (const exp of experiences) {
@@ -49,30 +16,6 @@ function calcYearsOfExperience(experiences: Experience[]): number {
     }
   }
   return Math.max(0, now - earliest)
-}
-
-function extractSkillsFromProfile(profile: ProxycurlProfile): string[] {
-  const skills = new Set<string>(profile.skills || [])
-
-  // Also extract from experience titles/companies
-  const techKeywords = [
-    'Python', 'Java', 'Go', 'Rust', 'TypeScript', 'JavaScript', 'C++',
-    'React', 'Node.js', 'Kubernetes', 'Docker', 'AWS', 'GCP', 'Azure',
-    'TensorFlow', 'PyTorch', 'Spark', 'Kafka', 'PostgreSQL', 'Redis',
-    'GraphQL', 'gRPC', 'Terraform', 'ML', 'LLM', 'RAG', 'CUDA',
-  ]
-
-  const text = [
-    profile.headline,
-    profile.summary,
-    ...profile.experiences.map(e => e.title),
-  ].join(' ')
-
-  for (const kw of techKeywords) {
-    if (text.toLowerCase().includes(kw.toLowerCase())) skills.add(kw)
-  }
-
-  return Array.from(skills).slice(0, 10)
 }
 
 export async function scrapeLinkedIn(
@@ -84,48 +27,110 @@ export async function scrapeLinkedIn(
     throw new Error('LINKEDIN_PROXYCURL_KEY not set')
   }
 
-  const headers = {
-    Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
-  }
-
   const candidates: RawCandidate[] = []
+  const seen = new Set<string>()
 
-  // Search by role/title using employee profile endpoint
-  const companies = ['Google', 'Meta', 'Apple', 'Microsoft', 'Amazon', 'OpenAI', 'Anthropic', 'Stripe', 'Airbnb', 'Uber']
-
-  for (const company of companies.slice(0, Math.ceil(limit / 2))) {
-    if (candidates.length >= limit) break
-    try {
-      const res = await axios.get(
-        `${BASE}/employee/profile`,
-        {
-          headers,
-          params: {
-            title: role,
-            company: company,
-          }
+  try {
+    // Use Person Search endpoint
+    const searchRes = await axios.get(
+      `${BASE}/search/person`,
+      {
+        headers: headers(),
+        params: {
+          title: role,
+          location: location.toLowerCase().includes('global') ? undefined : location,
+          limit: Math.min(limit, 10),
         }
-      )
+      }
+    )
 
-      const p = res.data
-      if (!p || !p.full_name) continue
+    const results = searchRes.data?.results || searchRes.data?.items || searchRes.data || []
 
-      candidates.push({
-        sourceId: 'linkedin',
-        externalId: p.public_identifier || `${company}-${candidates.length}`,
-        name: p.full_name,
-        headline: p.headline,
-        location: p.location,
-        profileUrl: p.linkedin_profile_url || `https://linkedin.com/in/${p.public_identifier}`,
-        avatarUrl: p.profile_pic_url,
-        skills: p.skills || [],
-        yearsOfExperience: calcYearsOfExperience(p.experiences || []),
-        rawData: p,
-      })
+    for (const result of results) {
+      if (candidates.length >= limit) break
 
-      await new Promise(r => setTimeout(r, 300))
-    } catch {
-      // skip
+      const profileUrl = result.linkedin_profile_url || result.profile_url || result.url
+      if (!profileUrl || seen.has(profileUrl)) continue
+      seen.add(profileUrl)
+
+      try {
+        // Enrich with full profile
+        const profileRes = await axios.get(
+          `${BASE}/person/profile`,
+          {
+            headers: headers(),
+            params: { linkedin_profile_url: profileUrl }
+          }
+        )
+
+        const p = profileRes.data
+        if (!p?.full_name) continue
+
+        candidates.push({
+          sourceId: 'linkedin',
+          externalId: p.public_identifier || profileUrl,
+          name: p.full_name,
+          headline: p.headline,
+          location: p.location,
+          profileUrl,
+          avatarUrl: p.profile_pic_url,
+          skills: p.skills || [],
+          yearsOfExperience: calcYearsOfExperience(p.experiences || []),
+          rawData: p,
+        })
+
+        await new Promise(r => setTimeout(r, 300))
+      } catch {
+        // skip failed profile enrichments
+      }
+    }
+  } catch (err) {
+    // Fallback to Employee Search if Person Search fails
+    console.error('Person search failed, trying employee search:', err)
+
+    try {
+      const companies = ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple', 'OpenAI', 'Anthropic', 'Stripe', 'Uber', 'Airbnb']
+
+      for (const company of companies) {
+        if (candidates.length >= limit) break
+
+        const empRes = await axios.get(
+          `${BASE}/company/employee/search`,
+          {
+            headers: headers(),
+            params: {
+              company_name: company,
+              keyword: role,
+              limit: 3,
+            }
+          }
+        )
+
+        const employees = empRes.data?.employees || empRes.data?.results || []
+
+        for (const emp of employees) {
+          if (candidates.length >= limit) break
+          if (seen.has(emp.linkedin_profile_url)) continue
+          seen.add(emp.linkedin_profile_url)
+
+          candidates.push({
+            sourceId: 'linkedin',
+            externalId: emp.linkedin_profile_url,
+            name: emp.full_name || emp.name || 'Unknown',
+            headline: emp.title || emp.headline,
+            location: emp.location,
+            profileUrl: emp.linkedin_profile_url,
+            avatarUrl: emp.profile_pic_url,
+            skills: emp.skills || [],
+            rawData: emp,
+          })
+        }
+
+        await new Promise(r => setTimeout(r, 300))
+      }
+    } catch (fallbackErr) {
+      console.error('Employee search also failed:', fallbackErr)
+      throw fallbackErr
     }
   }
 
