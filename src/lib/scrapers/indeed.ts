@@ -1,91 +1,79 @@
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
-const BASE = 'https://api.peopledatalabs.com/v5'
+const APIFY_BASE = 'https://api.apify.com/v2'
+const INDEED_ACTOR = 'misceres~indeed-scraper'
+
+const TECH_SKILLS = [
+  'Python', 'Java', 'Go', 'Golang', 'Rust', 'TypeScript', 'JavaScript',
+  'C++', 'Scala', 'Kotlin', 'React', 'Node.js', 'Kubernetes', 'Docker',
+  'AWS', 'GCP', 'Azure', 'TensorFlow', 'PyTorch', 'Spark', 'Kafka',
+  'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'GraphQL', 'Terraform',
+  'Machine Learning', 'Deep Learning', 'NLP', 'LLM', 'MLOps', 'DevOps',
+]
+
+function extractSkills(text: string): string[] {
+  const found: string[] = []
+  const lower = text.toLowerCase()
+  for (const skill of TECH_SKILLS) {
+    if (lower.includes(skill.toLowerCase())) found.push(skill)
+    if (found.length >= 8) break
+  }
+  return found
+}
 
 export async function scrapeIndeed(
   role: string,
   location: string,
   limit: number
 ): Promise<RawCandidate[]> {
-  if (!process.env.PEOPLEDATALABS_KEY) {
-    throw new Error('PEOPLEDATALABS_KEY not set')
+  if (!process.env.APIFY_TOKEN) {
+    throw new Error('APIFY_TOKEN not set')
   }
 
   const isGlobal = /global|remote|worldwide/i.test(location)
 
-  // Build SQL query for Person Search
-  const conditions = [
-    `job_title:"${role}"`,
-    `job_title_levels:("senior", "manager", "director", "vp", "cto", "principal", "staff", "lead")`,
-  ]
-
-  if (!isGlobal) {
-    conditions.push(`location_country:"united states"`)
-  }
-
-  const sqlQuery = `SELECT * FROM person WHERE ${conditions.join(' AND ')} LIMIT ${Math.min(limit, 100)}`
-
   try {
-    const res = await axios.post(
-      `${BASE}/person/search`,
+    // Run actor and wait for results in one call
+    const runRes = await axios.post(
+      `${APIFY_BASE}/acts/${INDEED_ACTOR}/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}&timeout=60&memory=256`,
       {
-        sql: sqlQuery,
-        size: Math.min(limit, 100),
-        pretty: false,
+        position: role,
+        location: isGlobal ? 'United States' : location,
+        country: 'US',
+        maxItems: Math.min(limit, 20),
+        saveOnlyUniqueItems: true,
+        followApplyRedirects: false,
       },
       {
-        headers: {
-          'X-Api-Key': process.env.PEOPLEDATALABS_KEY,
-          'Content-Type': 'application/json',
-        }
+        timeout: 65000,
+        headers: { 'Content-Type': 'application/json' },
       }
     )
 
-    const people = res.data?.data || []
-    const candidates: RawCandidate[] = []
+    const jobs = Array.isArray(runRes.data) ? runRes.data : []
 
-    for (const p of people) {
-      const skills = [
-        ...(p.skills || []),
-        ...(p.experience?.map((e: {title?: string}) => e.title).filter(Boolean) || []),
-      ].slice(0, 8)
+    return jobs.slice(0, limit).map((job: Record<string, unknown>, idx: number) => {
+      const description = (job.description as string) || (job.snippet as string) || ''
+      const company = (job.company as string) || 'Unknown Company'
+      const title = (job.positionName as string) || (job.title as string) || role
 
-      const linkedinUrl = p.linkedin_url
-        ? `https://linkedin.com/in/${p.linkedin_url}`
-        : p.profiles?.find((pr: {network: string, url: string}) => pr.network === 'linkedin')?.url
-
-      candidates.push({
-        sourceId: 'linkedin',
-        externalId: p.id,
-        name: p.full_name,
-        headline: p.job_title,
-        location: p.location_name,
-        profileUrl: linkedinUrl || `https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(p.full_name)}`,
-        avatarUrl: undefined,
-        skills,
-        yearsOfExperience: calcYearsFromExperience(p.experience || []),
-        rawData: p,
-      })
-    }
-
-    return candidates
+      return {
+        sourceId: 'indeed' as const,
+        externalId: (job.id as string) || `indeed-${idx}-${Date.now()}`,
+        name: `${company} — ${title}`,
+        headline: `Active opening at ${company}`,
+        location: (job.location as string) || location,
+        profileUrl: (job.url as string) || (job.externalApplyLink as string) || '',
+        skills: extractSkills(description),
+        yearsOfExperience: undefined,
+        rawData: job,
+      }
+    })
   } catch (err) {
-    console.error('PeopleDataLabs error:', err)
+    if (axios.isAxiosError(err)) {
+      console.error('Indeed/Apify error:', err.response?.data || err.message)
+    }
     throw err
   }
-}
-
-function calcYearsFromExperience(experience: Array<{
-  start_date?: string
-  end_date?: string
-}>): number {
-  if (!experience.length) return 0
-  const dates = experience
-    .map(e => e.start_date)
-    .filter(Boolean)
-    .map(d => new Date(d!).getFullYear())
-  if (!dates.length) return 0
-  const earliest = Math.min(...dates)
-  return Math.max(0, new Date().getFullYear() - earliest)
 }
