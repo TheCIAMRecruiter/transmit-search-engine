@@ -8,7 +8,7 @@ import { runSearch } from '../../../lib/orchestrator'
 import type { SourceId, SearchProgress } from '../../../lib/types'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120  // 2 min timeout (Vercel Pro; 60s on free)
+export const maxDuration = 300  // 2 min timeout (Vercel Pro; 60s on free)
 
 const SearchSchema = z.object({
   query: z.string().min(1).max(200),
