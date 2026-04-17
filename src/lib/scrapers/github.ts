@@ -43,24 +43,33 @@ function buildQuery(role: string, location: string): string {
     'security': ['security', 'cryptography', 'infosec'],
     'identity': ['oauth', 'openid', 'authentication', 'iam'],
     'ciam': ['oauth', 'openid', 'authentication'],
+    'iam': ['oauth', 'openid', 'authentication', 'iam'],
+    'auth': ['oauth', 'openid', 'authentication'],
     'data': ['data-science', 'pandas', 'spark'],
   }
 
   const roleLower = role.toLowerCase()
   let topics: string[] = []
   for (const [key, vals] of Object.entries(techTerms)) {
-    if (roleLower.includes(key)) topics = vals
+    if (roleLower.includes(key)) {
+      topics = vals
+      break
+    }
   }
 
-  const topicQuery = topics.length > 0
-    ? topics.map(t => `topic:${t}`).join(' ')
-    : `language:python language:go language:typescript`
-
-  const locationQuery = location && !location.toLowerCase().includes('global') && !location.toLowerCase().includes('remote')
+  const locationQuery = location &&
+    !location.toLowerCase().includes('global') &&
+    !location.toLowerCase().includes('remote')
     ? `location:"${location}"`
     : ''
 
-  return `${topicQuery} followers:>50 repos:>5 ${locationQuery}`.trim()
+  // If no topics matched, search by role keywords in bio
+  if (topics.length === 0) {
+    const keywords = role.split(' ').slice(0, 2).join('+')
+    return `${keywords} in:bio followers:>10 repos:>2 ${locationQuery}`.trim()
+  }
+
+  return `${topics.map(t => `topic:${t}`).join(' ')} followers:>50 repos:>5 ${locationQuery}`.trim()
 }
 
 async function getUserStats(login: string): Promise<{
