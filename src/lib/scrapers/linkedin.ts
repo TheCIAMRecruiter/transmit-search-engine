@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
-const BASE = 'https://nubela.co/api/v1'
+const BASE = 'https://nubela.co/proxycurl/api/v2'
 
 const headers = () => ({
   Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
@@ -33,16 +33,16 @@ export async function scrapeLinkedIn(
   try {
     // Use Person Search endpoint
     const searchRes = await axios.get(
-      `${BASE}/search/person`,
-      {
-        headers: headers(),
-        params: {
-          title: role,
-          location: location.toLowerCase().includes('global') ? undefined : location,
-          limit: Math.min(limit, 10),
-        }
-      }
-    )
+  `${BASE}/search/person`,
+  {
+    headers: headers(),
+    params: {
+      keywords: role,
+      location: location.toLowerCase().includes('global') ? 'Worldwide' : location,
+      page_size: Math.min(limit, 10),
+    }
+  }
+)
 
     const results = searchRes.data?.results || searchRes.data?.items || searchRes.data || []
 
