@@ -196,8 +196,8 @@ const url = `/api/search?query=${encodeURIComponent(query)}&location=${encodeURI
             return (
               <div key={src.id} style={{
                 ...styles.sourceItem,
-                borderColor: isDone ? '#e63946' : isRunning ? '#ffd166' : '#2a3560',
-              }}>
+                border{isError ? 'ERR' : isRunning ? '...' : (p?.found || 0)}
+              {isError ? 'ERR' : (p?.found || 0)}
                 <div style={styles.srcLeft}>
                   <div style={{ ...styles.srcIcon, color: src.color }}>
                     {src.id.slice(0, 2).toUpperCase()}
