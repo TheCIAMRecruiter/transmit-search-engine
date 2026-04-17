@@ -6,7 +6,7 @@
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
-const BASE = 'https://api.ninjapear.com'
+const BASE = 'https://nubela.co/api/v1'
 
 interface ProxycurlSearchResult {
   linkedin_profile_url: string
@@ -85,58 +85,47 @@ export async function scrapeLinkedIn(
   }
 
   const headers = {
-Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
-'X-Api-Key': process.env.LINKEDIN_PROXYCURL_KEY || '',
-
-  // Step 1: Search for profiles matching role + location
-  const isGlobal = location.toLowerCase().includes('global') ||
-    location.toLowerCase().includes('remote')
-
-  const searchParams = new URLSearchParams({
-    keyword_title: role,
-    page_size: String(Math.min(limit, 10)), // Proxycurl max 10/page
-  })
-
-  if (!isGlobal) {
-    searchParams.set('geo_urn', 'urn:li:fs_geo:103644278') // default US; map locations to URNs
+    Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
   }
 
-  const searchRes = await axios.get<{
-    results: ProxycurlSearchResult[]
-    next_page?: string
-  }>(`${BASE}/v2/search/person?${searchParams}`, { headers })
-
-  const results = searchRes.data.results || []
   const candidates: RawCandidate[] = []
 
-  // Step 2: Enrich each profile
-  for (const result of results.slice(0, limit)) {
+  // Search by role/title using employee profile endpoint
+  const companies = ['Google', 'Meta', 'Apple', 'Microsoft', 'Amazon', 'OpenAI', 'Anthropic', 'Stripe', 'Airbnb', 'Uber']
+
+  for (const company of companies.slice(0, Math.ceil(limit / 2))) {
+    if (candidates.length >= limit) break
     try {
-      const profileRes = await axios.get<ProxycurlProfile>(
-        `${BASE}/v2/linkedin?linkedin_profile_url=${encodeURIComponent(result.linkedin_profile_url)}&use_cache=if-present`,
-        { headers }
+      const res = await axios.get(
+        `${BASE}/employee/profile`,
+        {
+          headers,
+          params: {
+            title: role,
+            company: company,
+          }
+        }
       )
 
-      const p = profileRes.data
-      if (!p.full_name) continue
+      const p = res.data
+      if (!p || !p.full_name) continue
 
       candidates.push({
         sourceId: 'linkedin',
-        externalId: p.public_identifier,
+        externalId: p.public_identifier || `${company}-${candidates.length}`,
         name: p.full_name,
         headline: p.headline,
-        location: [p.city, p.state, p.country].filter(Boolean).join(', '),
-        profileUrl: result.linkedin_profile_url,
+        location: p.location,
+        profileUrl: p.linkedin_profile_url || `https://linkedin.com/in/${p.public_identifier}`,
         avatarUrl: p.profile_pic_url,
-        skills: extractSkillsFromProfile(p),
+        skills: p.skills || [],
         yearsOfExperience: calcYearsOfExperience(p.experiences || []),
-        rawData: p as unknown as Record<string, unknown>,
+        rawData: p,
       })
 
-      // Proxycurl rate limit: 300 req/min
-      await new Promise(r => setTimeout(r, 250))
+      await new Promise(r => setTimeout(r, 300))
     } catch {
-      // Profile unavailable or rate limited
+      // skip
     }
   }
 
