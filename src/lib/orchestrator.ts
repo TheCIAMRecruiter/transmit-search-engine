@@ -43,8 +43,8 @@ export async function runSearch(
   const errors: SourceError[] = []
   const limits = allocateLimits(params.topN)
 
-  // Use a queue with concurrency 3 to avoid hammering APIs simultaneously
-  const queue = new PQueue({ concurrency: 3 })
+  // Use a queue with concurrency 4 to avoid hammering APIs simultaneously
+  const queue = new PQueue({ concurrency: 4 })
 
   const sources = params.sources.filter(s => s !== 'twitter') // skip Twitter for now
 
