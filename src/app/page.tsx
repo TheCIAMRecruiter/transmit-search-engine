@@ -17,7 +17,7 @@ type SearchStatus = 'idle' | 'running' | 'done' | 'error'
 
 export default function TransmitSearch() {
   const [query, setQuery] = useState('Senior ML Engineer')
-  const [location, setLocation] = useState('Global / Remote')
+const [location, setLocation] = useState('United States')  
   const [topN, setTopN] = useState(100)
   const [candidates, setCandidates] = useState<ScoredCandidate[]>([])
   const [progress, setProgress] = useState<Record<string, SearchProgress>>({})
