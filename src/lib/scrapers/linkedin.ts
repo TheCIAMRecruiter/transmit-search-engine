@@ -6,7 +6,7 @@
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
-const BASE = 'https://nubela.co/proxycurl/api'
+const BASE = 'https://api.ninjapear.com'
 
 interface ProxycurlSearchResult {
   linkedin_profile_url: string
@@ -85,8 +85,8 @@ export async function scrapeLinkedIn(
   }
 
   const headers = {
-    Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
-  }
+Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
+'X-Api-Key': process.env.LINKEDIN_PROXYCURL_KEY || '',
 
   // Step 1: Search for profiles matching role + location
   const isGlobal = location.toLowerCase().includes('global') ||
