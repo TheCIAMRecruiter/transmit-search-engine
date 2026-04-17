@@ -56,8 +56,7 @@ export default function TransmitSearch() {
 
     abortRef.current = new AbortController()
     const sources = SOURCES.map(s => s.id).join(',')
-    const url = `/api/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&topN=${topN}&sources=${sources}`
-
+const url = `/api/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&topN=${String(topN)}&sources=${sources}`
     try {
       const res = await fetch(url, { signal: abortRef.current.signal })
       if (!res.body) throw new Error('No response body')
