@@ -95,6 +95,7 @@ export async function runSearch(
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
+        console.log(`Source ${sourceId} error:`, message)
         errors.push({ sourceId, message })
 
         onProgress?.({
