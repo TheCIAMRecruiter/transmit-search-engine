@@ -1,103 +1,68 @@
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
-const BASE = 'https://nubela.co/proxycurl/api/v2'
-
-const headers = () => ({
-  Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
-})
-
-function calcYearsOfExperience(experiences: Array<{starts_at?: {year: number} | null}>): number {
-  const now = new Date().getFullYear()
-  let earliest = now
-  for (const exp of experiences) {
-    if (exp.starts_at?.year && exp.starts_at.year < earliest) {
-      earliest = exp.starts_at.year
-    }
-  }
-  return Math.max(0, now - earliest)
-}
-
 export async function scrapeLinkedIn(
   role: string,
   location: string,
   limit: number
 ): Promise<RawCandidate[]> {
-  if (!process.env.LINKEDIN_PROXYCURL_KEY) {
-    throw new Error('LINKEDIN_PROXYCURL_KEY not set')
+  if (!process.env.PEOPLEDATALABS_KEY) {
+    throw new Error('PEOPLEDATALABS_KEY not set')
   }
 
-  const candidates: RawCandidate[] = []
+  const isGlobal = /global|remote|worldwide/i.test(location)
 
-  // Use Role Lookup endpoint — finds people by job title at companies
-  const companies = [
-    'google', 'microsoft', 'amazon', 'meta', 'apple',
-    'openai', 'anthropic', 'stripe', 'uber', 'airbnb',
-    'netflix', 'salesforce', 'nvidia', 'twitter', 'linkedin'
-  ]
-
-  for (const company of companies) {
-    if (candidates.length >= limit) break
-
-    try {
-      const res = await axios.get(
-        `${BASE}/linkedin/company/employee/search`,
-        {
-          headers: headers(),
-          params: {
-            linkedin_company_profile_url: `https://www.linkedin.com/company/${company}`,
-            keyword_regex: role,
-            page_size: 3,
+  const res = await axios.get(
+    'https://api.peopledatalabs.com/v5/person/search',
+    {
+      headers: {
+        'X-Api-Key': process.env.PEOPLEDATALABS_KEY,
+      },
+      params: {
+        query: JSON.stringify({
+          bool: {
+            must: [
+              { match: { job_title: role } },
+              ...(!isGlobal ? [{ match: { location_country: 'united states' } }] : []),
+            ]
           }
-        }
-      )
-
-      const employees = res.data?.employees || res.data?.results || []
-
-      for (const emp of employees) {
-        if (candidates.length >= limit) break
-
-        const profileUrl = emp.linkedin_profile_url
-        if (!profileUrl) continue
-
-        // Enrich profile
-        try {
-          const profileRes = await axios.get(
-            `${BASE}/linkedin`,
-            {
-              headers: headers(),
-              params: {
-                linkedin_profile_url: profileUrl,
-                use_cache: 'if-present',
-              }
-            }
-          )
-
-          const p = profileRes.data
-          if (!p?.full_name) continue
-
-          candidates.push({
-            sourceId: 'linkedin',
-            externalId: p.public_identifier || profileUrl,
-            name: p.full_name,
-            headline: p.headline,
-            location: p.location,
-            profileUrl,
-            avatarUrl: p.profile_pic_url,
-            skills: p.skills || [],
-            yearsOfExperience: calcYearsOfExperience(p.experiences || []),
-            rawData: p,
-          })
-        } catch {
-          // skip failed enrichments
-        }
-
-        await new Promise(r => setTimeout(r, 300))
+        }),
+        size: Math.min(limit, 100),
+        pretty: false,
       }
-    } catch (err) {
-      console.error(`LinkedIn error for ${company}:`, err)
     }
-  }
+  )
 
-  return candidates
+  const people = res.data?.data || []
+
+  return people.map((p: Record<string, unknown>) => {
+    const experience = (p.experience as Array<{start_date?: string}>) || []
+    const skills = (p.skills as string[]) || []
+
+    const linkedinUrl = p.linkedin_url
+      ? `https://linkedin.com/in/${p.linkedin_url}`
+      : `https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(p.full_name as string)}`
+
+    return {
+      sourceId: 'linkedin' as const,
+      externalId: p.id as string,
+      name: p.full_name as string,
+      headline: p.job_title as string,
+      location: p.location_name as string,
+      profileUrl: linkedinUrl,
+      avatarUrl: undefined,
+      skills: skills.slice(0, 8),
+      yearsOfExperience: calcYears(experience),
+      rawData: p,
+    }
+  })
+}
+
+function calcYears(experience: Array<{start_date?: string}>): number {
+  if (!experience.length) return 0
+  const years = experience
+    .map(e => e.start_date ? new Date(e.start_date).getFullYear() : null)
+    .filter(Boolean) as number[]
+  if (!years.length) return 0
+  return Math.max(0, new Date().getFullYear() - Math.min(...years))
 }
