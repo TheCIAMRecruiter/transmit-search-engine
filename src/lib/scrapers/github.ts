@@ -117,9 +117,10 @@ export async function scrapeGitHub(
   location: string,
   limit: number
 ): Promise<RawCandidate[]> {
-  if (!process.env.GITHUB_TOKEN) {
+ if (!process.env.GITHUB_TOKEN) {
+    console.log('All env vars:', Object.keys(process.env).filter(k => k.includes('GITHUB')))
     throw new Error('GITHUB_TOKEN not set')
-  }
+}
 
   const query = buildQuery(role, location)
   const perPage = Math.min(limit, 30) // GitHub max per page
