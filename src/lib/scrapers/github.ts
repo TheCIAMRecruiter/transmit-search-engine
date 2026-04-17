@@ -1,7 +1,3 @@
-// src/lib/scrapers/github.ts
-// Uses GitHub Search API — 5,000 req/hr authenticated
-// Docs: https://docs.github.com/en/rest/search/search#search-users
-
 import axios from 'axios'
 import type { RawCandidate, GitHubStats } from '../types'
 
@@ -27,6 +23,7 @@ interface GHUser {
   followers: number
   following: number
   created_at: string
+  type: string
 }
 
 interface GHRepo {
@@ -36,9 +33,7 @@ interface GHRepo {
   pushed_at: string
 }
 
-// Build a smart query from search params
 function buildQuery(role: string, location: string): string {
-  // Extract key tech terms from role
   const techTerms: Record<string, string[]> = {
     'machine learning': ['machine-learning', 'pytorch', 'tensorflow'],
     'ml engineer': ['machine-learning', 'deep-learning'],
@@ -46,6 +41,8 @@ function buildQuery(role: string, location: string): string {
     'frontend': ['react', 'typescript', 'javascript'],
     'devops': ['kubernetes', 'terraform', 'docker'],
     'security': ['security', 'cryptography', 'infosec'],
+    'identity': ['oauth', 'openid', 'authentication', 'iam'],
+    'ciam': ['oauth', 'openid', 'authentication'],
     'data': ['data-science', 'pandas', 'spark'],
   }
 
@@ -70,7 +67,6 @@ async function getUserStats(login: string): Promise<{
   stats: GitHubStats
   skills: string[]
 }> {
-  // Fetch repos to calculate total stars, forks, languages
   const reposRes = await axios.get<GHRepo[]>(
     `${BASE}/users/${login}/repos?per_page=100&sort=stars`,
     { headers: headers() }
@@ -80,7 +76,6 @@ async function getUserStats(login: string): Promise<{
   const totalStars = repos.reduce((s, r) => s + r.stargazers_count, 0)
   const totalForks = repos.reduce((s, r) => s + r.forks_count, 0)
 
-  // Count language frequency
   const langCount: Record<string, number> = {}
   for (const r of repos) {
     if (r.language) langCount[r.language] = (langCount[r.language] || 0) + 1
@@ -90,7 +85,6 @@ async function getUserStats(login: string): Promise<{
     .slice(0, 5)
     .map(([lang]) => lang)
 
-  // Estimate contribution activity from push dates
   const now = Date.now()
   const oneYear = 365 * 24 * 60 * 60 * 1000
   const activeRepos = repos.filter(r => {
@@ -100,7 +94,7 @@ async function getUserStats(login: string): Promise<{
 
   return {
     stats: {
-      followers: 0, // filled by caller
+      followers: 0,
       publicRepos: repos.length,
       totalStars,
       totalForks,
@@ -117,13 +111,12 @@ export async function scrapeGitHub(
   location: string,
   limit: number
 ): Promise<RawCandidate[]> {
- if (!process.env.GITHUB_TOKEN) {
-    console.log('All env vars:', Object.keys(process.env).filter(k => k.includes('GITHUB')))
+  if (!process.env.GITHUB_TOKEN) {
     throw new Error('GITHUB_TOKEN not set')
-}
+  }
 
   const query = buildQuery(role, location)
-  const perPage = Math.min(limit, 30) // GitHub max per page
+  const perPage = Math.min(limit, 30)
   const pages = Math.ceil(limit / perPage)
 
   const candidates: RawCandidate[] = []
@@ -138,7 +131,6 @@ export async function scrapeGitHub(
     const items: Array<{ login: string; avatar_url: string; html_url: string }> =
       searchRes.data.items || []
 
-    // Fetch full profiles in parallel (batches of 5 to respect rate limits)
     const batch = items.slice(0, limit - candidates.length)
     await Promise.all(
       batch.map(async (item) => {
@@ -152,10 +144,14 @@ export async function scrapeGitHub(
           ])
 
           const user = profileRes.data
+
+          // Skip organizations — only include real people
+          if (user.type === 'Organization') return
+
           stats.followers = user.followers
           stats.hireable = user.hireable
-if (user.type === 'Organization') return          
-  candidates.push({
+
+          candidates.push({
             sourceId: 'github',
             externalId: String(user.id),
             name: user.name || user.login,
@@ -169,13 +165,12 @@ if (user.type === 'Organization') return
             rawData: user as unknown as Record<string, unknown>,
           })
         } catch {
-          // Skip profiles that fail (private, suspended, etc.)
+          // Skip profiles that fail
         }
       })
     )
 
-    // Respect GitHub secondary rate limits
-    await sleep(300)
+    await sleep(1000)
   }
 
   return candidates.slice(0, limit)
