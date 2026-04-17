@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { RawCandidate } from '../types'
 
-const BASE = 'https://nubela.co/proxycurl/api/v2'
+const BASE = 'https://nubela.co/proxycurl/api/v3'
 
 const headers = () => ({
   Authorization: `Bearer ${process.env.LINKEDIN_PROXYCURL_KEY}`,
